@@ -49,6 +49,18 @@ def count_shapes(image, lower_thresh, upper_thresh):
     return len(contours)
 
 
+def germination_rate(seed_data):
+    num_seeds = len(seed_data)
+    num_successful = 0
+    for seed in seed_data:
+        has_coleoptile = seed[0]
+        num_roots = seed[1]
+        if has_coleoptile and num_roots > 0:
+            num_successful += 1
+    germination_rate = (num_successful / num_seeds) * 100
+    print("%.2f of seeds germinated", germination_rate)
+    return
+    
 # Calculate germination rate
 # Count roots
 # Count Coleoptiles
