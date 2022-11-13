@@ -68,7 +68,7 @@ def get_endosperm_or_coleoptile(image, lower_thresh, upper_thresh):
     return num_shapes, shape_centers, shape_im
 
 
-# Find roots
+# Find root
     # Grab touching endosperm
 def get_roots(image, endosperm_shapes):
     image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
