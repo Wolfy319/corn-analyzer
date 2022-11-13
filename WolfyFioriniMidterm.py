@@ -68,23 +68,7 @@ def get_endosperm_or_coleoptile(image, lower_thresh, upper_thresh):
     return num_shapes, shape_centers, shape_im
 
 
-# Find root
-    # Grab touching endosperm
-def get_roots(image, endosperm_shapes):
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    rem = remove_shapes(image, endosperm_shapes)
-    endosperm_border = np.min(np.where(endosperm_shapes > 0)[0])
-    # soil_border = np.max(np.where(endosperm_shapes > 0)[0])
-    # print(soil_border)
-    # pruned_im = cv2.line(image, (0, soil_border), (image.shape[0],soil_border), color=1,thickness=3)
-    pruned_im = image[endosperm_border:,:]
-    cv2.imshow("removed", rem)
-    # edges = cv2.Canny(pruned_im, 255,255,None,3)
-    _, thresh = cv2.threshold(pruned_im, 90, 255, cv2.THRESH_BINARY)
-    cv2.imshow("e", thresh)
-    # filtered = cv2.medianBlur(edges, 3)
-    # cv2.imshow("e", edges)
-    # cv2.imshow("e2", filtered)
+
 
 
 # Group endosperm with it's corresponding coleoptile and roots
