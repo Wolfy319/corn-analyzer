@@ -2,37 +2,16 @@ import matplotlib as plt
 import cv2
 import numpy as np
 
-# Count seeds
-    # Threshold endosperm
-
-# def threshold(image, lower_thresh, upper_thresh):
-#   b, g, r = cv2.split(image)
-#   r_low, g_low, b_low = lower_thresh
-#   r_high, g_high, b_high  = upper_thresh
-
-#   # Define thresholds
-#   mask =  (r > r_low) &  (r < r_high) & (g > g_low) & (g < g_high) & (b > b_low) & (b < b_high)
-          
-#   # Apply mask
-#   image = image * mask.reshape(mask.shape[0], mask.shape[1], 1)
-#   _, result = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY)
-#   return result
-
 def isolate_shapes(image):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
     big_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15,15))
 
+    # Perform morph ops to isolate shape structures
     closed_im = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel, iterations=2)
     dilate = cv2.morphologyEx(closed_im, cv2.MORPH_DILATE, kernel)
     median = cv2.medianBlur(dilate, 11)
-    # median = cv2.medianBlur(median, 7)
     open = cv2.morphologyEx(median, cv2.MORPH_OPEN, kernel)
     closed_im2 = cv2.morphologyEx(open, cv2.MORPH_CLOSE, big_kernel, iterations=3)
-    cv2.imshow("close", closed_im)
-    cv2.imshow("dil", dilate)
-    cv2.imshow("median", median)
-    cv2.imshow("close2", closed_im2)
-    cv2.imshow("open", open)
 
     return closed_im2
 
@@ -54,14 +33,6 @@ def detect_shapes(image):
 
     return len(centers), centers
 
-def remove_shapes(image, shape_im):
-    shape_im = cv2.morphologyEx(shape_im, cv2.MORPH_DILATE, np.ones((10,10)))
-    mask = np.where(shape_im > 0)
-
-    for i in range(len(mask[0])):
-        image[mask[0],mask[1]] = 0
-    return image
-
 # Count endosperm, coleoptile, and roots
 def get_endosperm_or_coleoptile(image, lower_thresh, upper_thresh):
     
@@ -76,27 +47,31 @@ def get_endosperm_or_coleoptile(image, lower_thresh, upper_thresh):
     
     return num_shapes, shape_centers, shape_im
 
-# Find root
-    # Grab touching endosperm
+# Find tips of roots that go under the soil
 def get_roots(image, endosperm_shapes):
     image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+    # Find bottom of seeds, this will be soil height
     opened = cv2.morphologyEx(endosperm_shapes, cv2.MORPH_OPEN, np.ones((10,10)))
-    # cv2.imshow("root open", opened)
     endosperm_bottom = np.max(np.where(opened > 0)[0])
-
-
+    # Remove everything above soil
     pruned_im = image[endosperm_bottom:,:]
+    # Blur image to remove noise
     av_kernel = (1/3)**2 * np.ones((3,3))
     blur = cv2.filter2D(pruned_im, -1, av_kernel)
+    # Find edges of roots
     edges = cv2.Canny(blur, 0,255,None,3)
+    # For some reason roots are detected better with this operation
     closed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((5,5)))[5:,:]
     edges2 = cv2.Canny(closed_edges, 0,255,None,3)
+    # Find tips of roots
     points = np.where(edges2[0,:] > 0)
     points = np.sort(points)
     sum = 0
     root_coords = []
     for point in points[0]:
         sum+=1
+        # Add root for every 2 edges
         if sum % 2 == 0:
             root_y = endosperm_bottom
             root_x = point
@@ -107,17 +82,22 @@ def get_roots(image, endosperm_shapes):
 # Group endosperm with it's corresponding coleoptile and roots
 def group_objects(seed_centers, sprout_centers, root_tips):
     groupings = []
+    # Set the minimum distance away from 
+    #   seed to be considered part of seed
     min_distance = 50
     for seed in seed_centers:
         seedX = seed[0]
         seed_data = []
         grouped_roots = []
         sprout_data = []
+        # Add endosperm location
         seed_data.append(seed)
+        # Group coleoptile with endosperm if close by
         for sprout in sprout_centers:
             sproutX = sprout[0]
             if np.abs(seedX - sproutX) <= min_distance:
                 sprout_data.append(sprout)
+        # Group root tip with seed if close by
         for root in root_tips: 
             rootX = root[0]
             if np.abs(seedX - rootX) <= min_distance:
@@ -127,44 +107,63 @@ def group_objects(seed_centers, sprout_centers, root_tips):
         groupings.append(seed_data)
     return groupings
 
+# Find percent of seeds that have germinated
 def germination_rate(seed_data):
     num_seeds = len(seed_data)
-    num_successful = 0
+    num_germinated = 0
     for seed in seed_data:
         sprout_data = seed[1]
         root_data = seed[2]
+
+        # Seed is germinated if it has a coleoptile 
+        # and at least one root in the soil
         if len(sprout_data) and len(root_data) > 0:
-            num_successful += 1
-    germination_rate = (num_successful / num_seeds) * 100
-    print("{percent}% of seeds germinated".format(percent = germination_rate))
-    return
+            num_germinated += 1
+    germination_rate = (num_germinated / num_seeds) * 100
     
-def draw_data(image, seed_data):
+    return "Germination rate: {percent}%".format(percent = germination_rate)
+    
+# Mark endosperm location, coleoptile location, 
+# root location, and germination rate on image
+def draw_data(image, seed_data, germ_rate, x_offset, y_offset):
     for i, seed in enumerate(seed_data):
         endo_X, endo_Y = seed[0][0], seed[0][1]
-        roots = seed[2]
-        print(roots)
-        cv2.rectangle(image, (endo_X - 25, endo_Y - 25), (endo_X + 25, endo_Y + 25), (0,255,0), thickness = 3)
-        cv2.line(image, (seed[1][0][0],seed[1][0][2]), (seed[1][0][0], endo_Y - 25), (0,0,255), thickness = 3)        
-        for root in roots:
-            cv2.circle(image, root, 3, (255,255,255), 3)
 
+        roots = seed[2]
+
+        # Draw with offset to reverse ROI cropping
+        cv2.rectangle(image, (endo_X - 25 + x_offset, endo_Y - 25 + y_offset), (endo_X + 25 + x_offset, endo_Y + 25 + y_offset), (0,255,0), thickness = 3)
+        cv2.line(image, (seed[1][0][0] + x_offset,seed[1][0][2] + y_offset), (seed[1][0][0] + x_offset, endo_Y - 25 + y_offset), (0,0,255), thickness = 3)        
+        for root in roots:
+            root_x = root[0]
+            root_y = root[1] + 50
+            cv2.circle(image, (root_x + x_offset,root_y + x_offset), 3, (255,255,255), 3)
+        
+        # Write text data
+        cv2.putText(image, "{number} roots".format(number = len(roots)), (endo_X-50 + x_offset, endo_Y + 50 + y_offset), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.8, (255,255,255))
+        cv2.putText(image, "coleoptile", (endo_X-50 + x_offset, endo_Y + 60 + y_offset), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.6, (255,255,255))
+        cv2.putText(image, "length:", (endo_X-50 + x_offset, endo_Y + 70 + y_offset), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.6, (255,255,255))
+        cv2.putText(image, "{number} px".format(number = (endo_Y - seed[1][0][2])), (endo_X-50 + x_offset, endo_Y + 80 + y_offset), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.6, (255,255,255))
+
+    cv2.putText(image, germ_rate, (0, image.shape[1] - 10), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (255,255,255))
     cv2.imshow("seed", image)
 
 
 original = cv2.imread("maize.jpeg")
 h,w,_ = original.shape
+# Crop out container edges
 roi = original[100:h-50, 50:w-50, :]
-cv2.imshow("maize", original)
-cv2.imshow("roi", roi)
 
+# Find endosperm data
 num_endo, endo_centers, endo_shapes = get_endosperm_or_coleoptile(roi, (185,125,0), (255,255,100))
+# Find coleoptile data
 num_col, col_centers, col_shapes = get_endosperm_or_coleoptile(roi, (125,155,10), (188,205,120))
-print("Number of endosperm: ", num_endo)
-# print("Number of coleoptile: ", num_coleoptile)
+# Find root data
 roots = get_roots(roi, endo_shapes)
+# Group endosperm with their roots/coleoptiles
 seed_data = group_objects(endo_centers, col_centers, roots)
-cv2.imshow("roots", roi)
-germination_rate(seed_data)
-draw_data(roi, seed_data)
+# Calculate germination rate
+germ_string = germination_rate(seed_data)
+# Show data
+draw_data(original, seed_data, germ_string, 50, 100)
 cv2.waitKey()
